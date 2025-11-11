@@ -15,6 +15,14 @@ from src.push import send_telegram_message
 st.set_page_config(page_title="RSS RAG → Telegram (Lite)", page_icon="📰")
 st.title("📰 RSS RAG → Telegram — Lite mode")
 
+def _latest_docs(docs, n):
+    # Prefer published timestamp if present; otherwise use insertion order
+    try:
+        docs_sorted = sorted(docs, key=lambda d: d.get("published", 0), reverse=True)
+    except Exception:
+        docs_sorted = docs
+    return docs_sorted[:n]
+
 with st.expander("🔧 Diagnostics"):
     st.write("Python:", sys.version)
     st.write("Feeds:", FEEDS)
@@ -52,8 +60,8 @@ with col1:
                 st.info(f"Fetched {len(entries)} entries (capped).")
             with st.spinner("Storing new docs (no embeddings)…"):
                 docs, new_docs = add_articles_to_corpus(entries)
-                count_proxy = rebuild_vectorstore_from_docs(docs)  # returns len(docs)
-            st.success(f"Stored {len(new_docs)} new article(s). Total stored: {count_proxy}")
+                total = rebuild_vectorstore_from_docs(docs)  # returns len(docs) in Lite
+            st.success(f"Stored {len(new_docs)} new article(s). Total stored: {total}")
         except Exception as e:
             st.error("Fetch/Store failed.")
             st.exception(e)
@@ -61,23 +69,53 @@ with col1:
 with col2:
     if st.button("📨 Send Digest (Lite)"):
         try:
-            with st.spinner("Fetching & building digest from summaries…"):
+            with st.spinner("Preparing digest…"):
+                # Try to add new items first (if any just fetched)
                 entries = fetch_rss_entries(FEEDS)
                 docs, new_docs = add_articles_to_corpus(entries)
+
+                # Choose items: prefer new_docs else latest stored docs
                 if new_docs:
                     items = new_docs[:MAX_SUMMARY_ITEMS_IN_DIGEST]
-                    parts = []
-                    for d in items:
-                        s = summarize_article(d["title"], d["text"])
-                        parts.append(f"• <b>{d['title']}</b>\n{s}\n\n🔗 {d['link']}")
-                    digest = "<b>📰 RSS Digest</b>\n\n" + "\n\n".join(parts)
-                    send_telegram_message(digest[:3900])
-                    st.success(f"Digest sent. Items: {len(items)}")
+                    source = "new"
                 else:
-                    st.info("No new articles.")
+                    docs_all = load_docs()
+                    if not docs_all:
+                        st.info("No stored articles yet. Click 'Fetch & Store (Lite)' first.")
+                        st.stop()
+                    items = _latest_docs(docs_all, MAX_SUMMARY_ITEMS_IN_DIGEST)
+                    source = "stored"
+
+                parts = []
+                for d in items:
+                    s = summarize_article(d["title"], d.get("text", ""))
+                    parts.append(f"• <b>{d['title']}</b>\n{s}\n\n🔗 {d['link']}")
+                digest = "<b>📰 RSS Digest</b>\n\n" + "\n\n".join(parts)
+                send_telegram_message(digest[:3900])
+                st.success(f"Digest sent from {source} items: {len(items)}")
         except Exception as e:
             st.error("Digest failed.")
             st.exception(e)
 
 st.write("---")
-st.caption("Lite mode: no page fetching, no transformers, no embeddings. Stable & cheap.")
+st.subheader("📨 Quick: Send Digest of Latest Stored")
+if st.button("Send Latest Stored (no fetch)"):
+    try:
+        docs_all = load_docs()
+        if not docs_all:
+            st.info("No stored articles yet. Click 'Fetch & Store (Lite)' first.")
+        else:
+            items = _latest_docs(docs_all, MAX_SUMMARY_ITEMS_IN_DIGEST)
+            parts = []
+            for d in items:
+                s = summarize_article(d["title"], d.get("text", ""))
+                parts.append(f"• <b>{d['title']}</b>\n{s}\n\n🔗 {d['link']}")
+            digest = "<b>📰 RSS Digest</b>\n\n" + "\n\n".join(parts)
+            send_telegram_message(digest[:3900])
+            st.success(f"Digest sent from stored items: {len(items)}")
+    except Exception as e:
+        st.error("Digest failed.")
+        st.exception(e)
+
+st.write("---")
+st.caption("Lite mode: summaries only, no transformers, no embeddings. Stable & cheap.")
