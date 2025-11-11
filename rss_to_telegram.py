@@ -6,9 +6,12 @@ from src.push import send_telegram_message
 
 def collect_and_index():
     entries = fetch_rss_entries(FEEDS)
+    print(f"Fetched {len(entries)} feed entries.")
+    # hydrate full text
     for e in entries:
         e["full_text"] = fetch_article_text(e["link"])
     docs, new_docs = add_articles_to_corpus(entries)
+    print(f"Add-to-corpus: {len(new_docs)} new docs after fallback.")
     if new_docs:
         total_chunks = rebuild_vectorstore_from_docs(docs)
         print(f"Indexed: {len(new_docs)} new articles, {total_chunks} total chunks.")
