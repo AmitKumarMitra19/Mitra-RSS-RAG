@@ -1,0 +1,8 @@
+feedparser
+trafilatura
+faiss-cpu
+sentence-transformers
+transformers
+torch
+streamlit
+requests
