@@ -1,33 +1,32 @@
-from src.config import SUM_MODEL
-import os
+# src/summarize.py
+import os, re
+from src.config import SUM_MODEL, DISABLE_SUMMARIZER
 
-USE_FALLBACK = os.getenv("DISABLE_SUMMARIZER", "0").lower() in ("1","true","yes")
-
-if not USE_FALLBACK:
-    from transformers import pipeline
+if not DISABLE_SUMMARIZER:
     try:
+        from transformers import pipeline
         import streamlit as st
-        cache_resource = st.cache_resource
+        @st.cache_resource
+        def get_summarizer():
+            return pipeline("summarization", model=SUM_MODEL, device=-1)
     except Exception:
-        def cache_resource(f): return f
+        # If transformers fails, fallback to simple mode
+        os.environ["DISABLE_SUMMARIZER"] = "1"
+        DISABLE_SUMMARIZER = True
 
-    @cache_resource
-    def get_summarizer():
-        return pipeline("summarization", model=SUM_MODEL, device=-1)
+def _simple_summary(text: str, limit_chars=600):
+    # Extractive fallback: first ~4 sentences / limit chars
+    sents = re.split(r'(?<=[.!?])\s+', (text or "").strip())
+    return (" ".join(sents[:4])[:limit_chars]).strip()
 
 def summarize_text(text: str, max_tokens=220, min_tokens=60) -> str:
-    if not text:
-        return ""
-    if USE_FALLBACK:
-        # simple extractive fallback: first ~4 sentences or ~700 chars
-        import re
-        sents = re.split(r'(?<=[.!?])\s+', text.strip())
-        out = " ".join(sents[:4])[:700]
-        return out
+    if not text: return ""
+    if DISABLE_SUMMARIZER:
+        return _simple_summary(text)
     summarizer = get_summarizer()
     text = text[:2048]
-    out = summarizer(text, max_length=max_tokens, min_length=min_tokens, do_sample=False, truncation=True)[0]["summary_text"]
-    return out.strip()
+    return summarizer(text, max_length=max_tokens, min_length=min_tokens,
+                      do_sample=False, truncation=True)[0]["summary_text"].strip()
 
 def summarize_article(title: str, text: str) -> str:
     lead = f"Title: {title}\n\n"
