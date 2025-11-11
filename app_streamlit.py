@@ -1,16 +1,20 @@
+# app_streamlit.py
 import os
 import sys
 import traceback
 import streamlit as st
 
-# App imports
+# Ensure data dirs exist early (avoid permission/path errors)
+DATA_DIR = "./data"
+INDEX_DIR = os.path.join(DATA_DIR, "index")
+os.makedirs(INDEX_DIR, exist_ok=True)
+
 from src.config import FEEDS, TOP_K, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 from src.loader import fetch_rss_entries, fetch_article_text
 from src.indexer import load_docs, add_articles_to_corpus, rebuild_vectorstore_from_docs, search
 from src.summarize import summarize_article
 from src.push import send_telegram_message
 
-# ---------- Page setup ----------
 st.set_page_config(page_title="RSS RAG → Telegram", page_icon="📰")
 st.title("📰 RSS RAG → Telegram")
 
@@ -22,7 +26,7 @@ with st.expander("🔧 Diagnostics"):
     st.write("Top-K (from config):", TOP_K)
     st.write("Has TELEGRAM_BOT_TOKEN:", bool(TELEGRAM_BOT_TOKEN))
     st.write("TELEGRAM_CHAT_ID:", TELEGRAM_CHAT_ID if TELEGRAM_CHAT_ID else "(missing)")
-    st.caption("Tip: Secrets are edited in App → Settings → Secrets (TOML).")
+    st.caption("Tip: Secrets live in App → Settings → Secrets (TOML).")
 
     if st.button("Send test message"):
         try:
@@ -32,23 +36,22 @@ with st.expander("🔧 Diagnostics"):
             st.error("Failed to send test message.")
             st.exception(e)
 
-st.write("")
-
-# ---------- Feeds ----------
 with st.expander("📜 Feeds in use"):
     st.write(FEEDS)
 
-# ---------- Actions ----------
 col1, col2 = st.columns(2)
 
 with col1:
     if st.button("🔄 Fetch & Index Now"):
         try:
-            entries = fetch_rss_entries(FEEDS)
-            for e in entries:
-                e["full_text"] = fetch_article_text(e["link"])
-            docs, new_docs = add_articles_to_corpus(entries)
-            chunks = rebuild_vectorstore_from_docs(docs)
+            with st.spinner("Fetching feeds and extracting articles…"):
+                entries = fetch_rss_entries(FEEDS)
+                if not entries:
+                    st.warning("No entries returned from feeds. Check RSS_FEEDS in Secrets.")
+                for e in entries:
+                    e["full_text"] = fetch_article_text(e["link"])
+                docs, new_docs = add_articles_to_corpus(entries)
+                chunks = rebuild_vectorstore_from_docs(docs)
             st.success(f"Indexed {len(new_docs)} new article(s). Total chunks: {chunks}")
         except Exception as e:
             st.error("Indexing failed.")
@@ -57,34 +60,35 @@ with col1:
 with col2:
     if st.button("📨 Send Latest Digest to Telegram"):
         try:
-            entries = fetch_rss_entries(FEEDS)
-            for e in entries:
-                e["full_text"] = fetch_article_text(e["link"])
-            docs, new_docs = add_articles_to_corpus(entries)
-            if new_docs:
-                parts = []
-                for d in new_docs[:5]:
-                    s = summarize_article(d["title"], d["text"])
-                    parts.append(f"• <b>{d['title']}</b>\n{s}\n\n🔗 {d['link']}")
-                digest = "<b>📰 RSS Digest</b>\n\n" + "\n\n".join(parts)
-                send_telegram_message(digest[:3900])  # safety margin for Telegram limits
-                st.success("Digest sent to Telegram.")
-            else:
-                st.info("No new articles.")
+            with st.spinner("Building digest…"):
+                entries = fetch_rss_entries(FEEDS)
+                for e in entries:
+                    e["full_text"] = fetch_article_text(e["link"])
+                docs, new_docs = add_articles_to_corpus(entries)
+                if new_docs:
+                    parts = []
+                    for d in new_docs[:5]:
+                        s = summarize_article(d["title"], d["text"])
+                        parts.append(f"• <b>{d['title']}</b>\n{s}\n\n🔗 {d['link']}")
+                    digest = "<b>📰 RSS Digest</b>\n\n" + "\n\n".join(parts)
+                    send_telegram_message(digest[:3900])
+                    st.success("Digest sent to Telegram.")
+                else:
+                    st.info("No new articles.")
         except Exception as e:
             st.error("Sending digest failed.")
             st.exception(e)
 
 st.write("---")
 
-# ---------- RAG Search ----------
 st.subheader("🔎 Ask the RAG")
 q = st.text_input("Your question")
 topk = st.slider("Top-K", 1, 10, TOP_K)
 
 if st.button("Search") and q.strip():
     try:
-        hits = search(q, top_k=topk)
+        with st.spinner("Searching…"):
+            hits = search(q, top_k=topk)
         if not hits:
             st.warning("Index empty or no results. Click '🔄 Fetch & Index Now' first.")
         else:
