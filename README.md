@@ -1,20 +1,56 @@
-# RSS RAG → Telegram
+# 📰 RSS RAG → Telegram Digest
 
-Pipeline:
-1) Read RSS
-2) Extract articles (trafilatura)
-3) Build FAISS index (sentence-transformers)
-4) Summarize (BART)
-5) Send Telegram digest
-6) Streamlit UI for manual refresh, digest, and RAG search
+A lightweight system that **fetches RSS feeds, summarizes new articles, and sends daily digests to Telegram** — powered by **Python, Streamlit, and GitHub Actions**.
 
-## Env (set in host/Cloud)
-- TELEGRAM_BOT_TOKEN
-- TELEGRAM_CHAT_ID
-- RSS_FEEDS (optional, comma-separated)
-- EMB_MODEL (optional)
-- SUM_MODEL (optional)
+---
 
-## Run
-python rss_to_telegram.py
-streamlit run app_streamlit.py
+## 🚀 Features
+- Fetches multiple RSS feeds and detects new updates  
+- Summarizes articles (or uses RSS summaries in Lite mode)  
+- Sends formatted digests via Telegram Bot  
+- Runs automatically on schedule using GitHub Actions  
+- Streamlit app for manual testing and live updates  
+
+---
+
+## ⚙️ Setup Instructions
+
+### 🔧 Requirements
+- Python 3.11 or later  
+- GitHub account  
+- Telegram Bot Token and Chat ID  
+- Streamlit Cloud (for optional deployment)
+
+---
+
+### 🔐 Configure Secrets
+
+Add the following secrets either in **Streamlit → Settings → Secrets** or **GitHub → Settings → Secrets and variables → Actions**:
+
+```toml
+TELEGRAM_BOT_TOKEN = "your_bot_token"
+TELEGRAM_CHAT_ID = "your_chat_id_or_@channel"
+RSS_FEEDS = "https://feeds.bbci.co.uk/news/world/rss.xml, https://www.theverge.com/rss/index.xml"
+USE_RSS_SUMMARY_ONLY = "1"
+DISABLE_SUMMARIZER = "1"
+DISABLE_EMBEDDINGS = "1"
+
+🕒 GitHub Actions Automation
+
+This project includes an automated workflow to fetch feeds and send Telegram digests on schedule.
+
+Workflow file: .github/workflows/rss_digest.yml
+
+This action automatically:
+
+Fetches latest RSS feeds
+
+Detects new articles
+
+Summarizes them
+
+Sends a Telegram digest
+
+If no new updates are found, it logs “Nothing to send.”
+
+StreamLit App: https://mitra-rss-rag.streamlit.app/
