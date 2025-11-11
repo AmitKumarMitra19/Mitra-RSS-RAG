@@ -2,26 +2,35 @@ import os, json
 import numpy as np
 import faiss
 from sentence_transformers import SentenceTransformer
-from src.config import DATA_DIR, INDEX_DIR, DOCS_JSON, FAISS_PATH, EMB_NPY, EMB_MODEL
+from src.config import (
+    DATA_DIR, INDEX_DIR, DOCS_JSON, FAISS_PATH, EMB_NPY, EMB_MODEL,
+    MAX_NEW_DOCS_PER_RUN, MAX_CHUNKS_FOR_EMBED
+)
 
-# Streamlit cache (no-op if not present)
+# Optional Streamlit cache (no-op outside Streamlit)
 try:
     import streamlit as st
     cache_resource = st.cache_resource
+    cache_data = st.cache_data
 except Exception:
-    def cache_resource(func):
-        return func
+    def cache_resource(f): return f
+    def cache_data(f): return f
 
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(INDEX_DIR, exist_ok=True)
 
 @cache_resource
 def get_embedder():
-    return SentenceTransformer(EMB_MODEL, device="cpu")  # Cloud-safe
+    # Use CPU in Cloud
+    return SentenceTransformer(EMB_MODEL, device="cpu")
 
 def build_embeddings(texts, batch_size=64):
     model = get_embedder()
-    embs = model.encode(texts, batch_size=batch_size, convert_to_numpy=True, normalize_embeddings=True)
+    # CAP total chunks to avoid OOM
+    texts = texts[:MAX_CHUNKS_FOR_EMBED]
+    embs = model.encode(
+        texts, batch_size=batch_size, convert_to_numpy=True, normalize_embeddings=True
+    )
     return embs
 
 def save_index(embeddings: np.ndarray):
@@ -51,8 +60,7 @@ def chunk_text(text, chunk_size=800, overlap=120):
     words = text.split()
     if not words:
         return []
-    chunks = []
-    i = 0
+    chunks, i = [], 0
     while i < len(words):
         j = min(len(words), i + chunk_size)
         chunks.append(" ".join(words[i:j]))
@@ -61,27 +69,23 @@ def chunk_text(text, chunk_size=800, overlap=120):
 
 def add_articles_to_corpus(entries):
     """
-    Convert entries to chunked documents. FALLBACK: if 'full_text' is empty,
-    use 'summary' from RSS so we always index something.
-    Each doc: {id, title, link, published, text, chunks}
-    Returns (docs, new_docs)
+    FALLBACK: if 'full_text' empty, use RSS 'summary' so we always index something.
+    Apply MAX_NEW_DOCS_PER_RUN cap to avoid huge batches on Cloud.
     """
     docs = load_docs()
     known_links = {d["link"] for d in docs}
     new = []
 
     for e in entries:
-        if not e.get("link"):
-            continue
-        if e["link"] in known_links:
+        if len(new) >= MAX_NEW_DOCS_PER_RUN:
+            break
+        link = e.get("link") or ""
+        if not link or link in known_links:
             continue
 
-        # Prefer extracted article text; fallback to RSS summary/description
         text = (e.get("full_text") or "").strip()
         if not text:
             text = (e.get("summary") or "").strip()
-
-        # If still empty, skip this item
         if not text:
             continue
 
@@ -92,9 +96,9 @@ def add_articles_to_corpus(entries):
         doc = {
             "id": str(len(docs) + len(new)),
             "title": e.get("title", "") or "(untitled)",
-            "link": e["link"],
+            "link": link,
             "published": e.get("published", 0),
-            "text": text,
+            "text": text[:20000],  # hard cap per-doc text
             "chunks": chunks,
         }
         new.append(doc)
