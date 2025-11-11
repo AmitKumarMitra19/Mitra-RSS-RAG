@@ -35,21 +35,18 @@ USE_RSS_SUMMARY_ONLY = "1"
 DISABLE_SUMMARIZER = "1"
 DISABLE_EMBEDDINGS = "1"
 
-🕒 GitHub Actions Automation
+**### 🕒 GitHub Actions Automation**
 
-This project includes an automated workflow to fetch feeds and send Telegram digests on schedule.
+- This project includes an automated workflow to fetch feeds and send Telegram digests on schedule.
 
-Workflow file: .github/workflows/rss_digest.yml
+- Workflow file: .github/workflows/rss_digest.yml
 
-This action automatically:
+**This action automatically:**
 
-Fetches latest RSS feeds
-
-Detects new articles
-
-Summarizes them
-
-Sends a Telegram digest
+- Fetches latest RSS feeds
+- Detects new articles
+- Summarizes them
+- Sends a Telegram digest
 
 If no new updates are found, it logs “Nothing to send.”
 
