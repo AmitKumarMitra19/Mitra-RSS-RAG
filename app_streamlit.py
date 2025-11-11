@@ -1,4 +1,5 @@
-import os, sys
+# app_streamlit.py
+import os, sys, traceback
 import streamlit as st
 
 from src.config import (
@@ -33,17 +34,33 @@ with st.expander("🔧 Diagnostics"):
             send_telegram_message("✅ Streamlit secrets wired correctly.")
             st.success("Test message sent.")
         except Exception as e:
-            st.error(f"Failed: {e}")
+            st.error("Failed:")
+            st.exception(e)
 
 with st.expander("📜 Feeds in use"):
     st.write(FEEDS)
+
+# ------------- NEW: Debug-only fetch button (no indexing, no embedding) -------------
+if st.button("🧪 Fetch (Debug only)"):
+    try:
+        with st.spinner("Fetching limited entries for debug…"):
+            entries = fetch_rss_entries(FEEDS)
+        st.success(f"Fetched {len(entries)} entries (capped). Showing first 6:")
+        for e in entries[:6]:
+            st.write("•", e.get("title"), "→", e.get("link"))
+        st.info("If this works, fetching is not the crash point.")
+    except Exception as e:
+        st.error("Fetch crashed with exception below:")
+        st.exception(e)
+
+st.write("---")
 
 col1, col2 = st.columns(2)
 
 def _hydrate(entries):
     """Attach full_text unless summary-only mode is enabled."""
     if USE_RSS_SUMMARY_ONLY:
-        for e in entries: e["full_text"] = ""  # force summary fallback downstream
+        for e in entries: e["full_text"] = ""  # force summary fallback
         return entries
     non_empty = 0
     for i, e in enumerate(entries, 1):
@@ -60,7 +77,7 @@ with col1:
         try:
             with st.spinner("Fetching limited set of entries…"):
                 entries = fetch_rss_entries(FEEDS)
-                st.info(f"Fetched {len(entries)} entries (capped by limits).")
+                st.info(f"Fetched {len(entries)} entries (capped).")
             with st.spinner("Hydrating (summary-only mode if enabled)…"):
                 entries = _hydrate(entries)
             with st.spinner("Adding new docs and rebuilding index…"):
@@ -68,7 +85,7 @@ with col1:
                 chunks = rebuild_vectorstore_from_docs(docs)
             st.success(f"Indexed {len(new_docs)} new article(s). Total chunks: {chunks}")
         except Exception as e:
-            st.error("Indexing failed.")
+            st.error("Indexing failed. See details below:")
             st.exception(e)
 
 with col2:
@@ -93,7 +110,7 @@ with col2:
                 else:
                     st.info("No new articles.")
         except Exception as e:
-            st.error("Sending digest failed.")
+            st.error("Sending digest failed. See details below:")
             st.exception(e)
 
 st.write("---")
